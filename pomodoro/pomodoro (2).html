@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pomodoro Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --focus-hue: 14;
+      --break-hue: 162;
+      --bg: #0f0e11;
+      --surface: #1a1820;
+      --surface2: #221f2a;
+      --border: rgba(255,255,255,0.08);
+      --text: #f0edf7;
+      --muted: rgba(240,237,247,0.45);
+      --accent: hsl(var(--focus-hue), 88%, 62%);
+      --accent-dim: hsl(var(--focus-hue), 88%, 62%, 0.12);
+      --ring-track: rgba(255,255,255,0.07);
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: var(--font-display);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 3rem;
+      overflow-x: hidden;
+    }
+
+  
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app { position: relative; z-index: 1; width: 100%; max-width: 480px; }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2.5rem;
+    }
+
+    .logo {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text);
+      opacity: 0.7;
+    }
+
+    .settings-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.78rem;
+      font-family: var(--font-display);
+      letter-spacing: 0.06em;
+      transition: background var(--transition), color var(--transition);
+    }
+    .settings-btn:hover { background: var(--surface2); color: var(--text); }
+    .settings-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    /* ── Mode tabs ── */
+    .mode-tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 0.3rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .mode-tab {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      padding: 0.5rem 1rem;
+      border-radius: 100px;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+    }
+
+    .mode-tab.active {
+      background: var(--accent);
+      color: #0f0e11;
+    }
+    .mode-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    /* ── Timer ring ── */
+    .timer-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 2.5rem;
+      position: relative;
+    }
+
+    .ring-svg {
+      width: min(280px, 72vw);
+      height: min(280px, 72vw);
+    }
+
+    .ring-track {
+      fill: none;
+      stroke: var(--ring-track);
+      stroke-width: 6;
+    }
+
+    .ring-progress {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 6;
+      stroke-linecap: round;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+      transition: stroke-dashoffset 1s linear, stroke var(--transition);
+    }
+
+    .ring-center {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .time-display {
+      font-family: var(--font-mono);
+      font-size: clamp(2.8rem, 11vw, 3.8rem);
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .mode-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-top: 0.5rem;
+      transition: color var(--transition);
+    }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .btn {
+      font-family: var(--font-display);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      border-radius: 100px;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease, background var(--transition);
+    }
+    .btn:active { transform: scale(0.95); }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0f0e11;
+      font-size: 0.9rem;
+      padding: 0.85rem 2.5rem;
+      min-width: 140px;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      padding: 0.75rem 1.25rem;
+    }
+    .btn-secondary:hover { background: var(--surface2); color: var(--text); }
+
+    /* ── Session dots (cycles tracker) ── */
+    .cycle-dots {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ring-track);
+      transition: background var(--transition), transform var(--transition);
+    }
+    .dot.done { background: var(--accent); transform: scale(1.15); }
+
+    /* ── History ── */
+    .history-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .history-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .history-count {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--accent);
+    }
+
+    .history-list {
+      list-style: none;
+      max-height: 260px;
+      overflow-y: auto;
+      padding: 0.5rem 0;
+    }
+
+    .history-list::-webkit-scrollbar { width: 4px; }
+    .history-list::-webkit-scrollbar-track { background: transparent; }
+    .history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 1.25rem;
+      font-size: 0.82rem;
+      border-bottom: 1px solid var(--border);
+      animation: slideIn 0.3s ease;
+    }
+    .history-item:last-child { border-bottom: none; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .history-check {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      color: var(--accent);
+    }
+
+    .history-duration {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      color: var(--text);
+      min-width: 52px;
+    }
+
+    .history-type {
+      color: var(--muted);
+      flex: 1;
+      font-size: 0.78rem;
+    }
+
+    .history-time {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .history-empty {
+      padding: 2rem 1.25rem;
+      text-align: center;
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* ── Settings panel ── */
+    .settings-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+    .settings-panel.open { display: block; animation: slideIn 0.2s ease; }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .setting-field label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .setting-field input[type="number"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      padding: 0.55rem 0.75rem;
+      outline: none;
+      transition: border-color 0.2s;
+      -moz-appearance: textfield;
+    }
+    .setting-field input[type="number"]::-webkit-outer-spin-button,
+    .setting-field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .setting-field input[type="number"]:focus { border-color: var(--accent); }
+
+    .settings-apply {
+      margin-top: 1rem;
+      width: 100%;
+      background: var(--accent);
+      color: #0f0e11;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      padding: 0.65rem;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .settings-apply:hover { opacity: 0.88; }
+    .settings-apply:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    /* ── Toast notification ── */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 0.65rem 1.5rem;
+      font-size: 0.82rem;
+      color: var(--text);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      white-space: nowrap;
+      z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Break mode color switch ── */
+    body.break-mode {
+      --accent: hsl(var(--break-hue), 60%, 52%);
+      --accent-dim: hsl(var(--break-hue), 60%, 52%, 0.12);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 400px) {
+      .controls { gap: 0.6rem; }
+      .btn-primary { padding: 0.75rem 1.75rem; min-width: 110px; }
+    }
+
+    @media (min-width: 640px) {
+      body { padding: 3rem 1.5rem 4rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" role="main">
+
+    <header>
+      <span class="logo" aria-label="Pomodoro Timer App">Pomodoro</span>
+      <button class="settings-btn" id="settingsToggle" aria-expanded="false" aria-controls="settingsPanel">
+        Settings
+      </button>
+    </header>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settingsPanel" role="region" aria-label="Timer settings">
+      <div class="settings-grid">
+        <div class="setting-field">
+          <label for="focusInput">Focus (min)</label>
+          <input type="number" id="focusInput" min="1" max="120" value="25" aria-label="Focus duration in minutes" />
+        </div>
+        <div class="setting-field">
+          <label for="breakInput">Break (min)</label>
+          <input type="number" id="breakInput" min="1" max="60" value="5" aria-label="Break duration in minutes" />
+        </div>
+      </div>
+      <button class="settings-apply" id="applySettings">Apply &amp; Reset</button>
+    </div>
+
+    <!-- Mode tabs -->
+    <div class="mode-tabs" role="tablist" aria-label="Timer mode">
+      <button class="mode-tab active" role="tab" aria-selected="true" data-mode="focus" id="tab-focus">Focus</button>
+      <button class="mode-tab" role="tab" aria-selected="false" data-mode="break" id="tab-break">Break</button>
+    </div>
+
+    <!-- Timer ring -->
+    <div class="timer-wrap">
+      <svg class="ring-svg" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+        <circle class="ring-track" cx="100" cy="100" r="88" />
+        <circle class="ring-progress" id="ringProgress" cx="100" cy="100" r="88" />
+      </svg>
+      <div class="ring-center" aria-live="polite" aria-atomic="true">
+        <div class="time-display" id="timeDisplay" aria-label="Time remaining">25:00</div>
+        <div class="mode-label" id="modeLabel">Focus</div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button class="btn btn-secondary" id="resetBtn" aria-label="Reset timer">Reset</button>
+      <button class="btn btn-primary" id="startBtn" aria-label="Start timer">Start</button>
+      <button class="btn btn-secondary" id="skipBtn" aria-label="Skip to next session">Skip</button>
+    </div>
+
+    <!-- Pomodoro cycle dots -->
+    <div class="cycle-dots" id="cycleDots" aria-label="Completed pomodoros today" role="img"></div>
+
+    <!-- Session history -->
+    <div class="history-wrap">
+      <div class="history-header">
+        <span class="history-title">Today's sessions</span>
+        <span class="history-count" id="historyCount" aria-live="polite">0 focus</span>
+      </div>
+      <ul class="history-list" id="historyList" aria-label="Session history" aria-live="polite">
+        <li class="history-empty">No sessions yet — start your first focus block.</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" role="status" aria-live="assertive"></div>
+
+  <script>
+    /* ── State ── */
+    const STORAGE_KEY = 'pomodoro_history_v2';
+
+    let focusMin = 25, breakMin = 5;
+    let mode = 'focus';   // 'focus' | 'break'
+    let totalSecs, remainSecs, intervalId;
+    let running = false;
+    let cycleCount = 0;   // focus sessions completed
+
+    /* ── DOM refs ── */
+    const timeDisplay  = document.getElementById('timeDisplay');
+    const modeLabel    = document.getElementById('modeLabel');
+    const startBtn     = document.getElementById('startBtn');
+    const resetBtn     = document.getElementById('resetBtn');
+    const skipBtn      = document.getElementById('skipBtn');
+    const ringProgress = document.getElementById('ringProgress');
+    const cycleDots    = document.getElementById('cycleDots');
+    const historyList  = document.getElementById('historyList');
+    const historyCount = document.getElementById('historyCount');
+    const settingsToggle = document.getElementById('settingsToggle');
+    const settingsPanel  = document.getElementById('settingsPanel');
+    const focusInput  = document.getElementById('focusInput');
+    const breakInput  = document.getElementById('breakInput');
+    const applyBtn    = document.getElementById('applySettings');
+    const tabs        = document.querySelectorAll('.mode-tab');
+    const toastEl     = document.getElementById('toast');
+
+    /* ── Ring geometry ── */
+    const CIRCUMFERENCE = 2 * Math.PI * 88;
+    ringProgress.style.strokeDasharray = CIRCUMFERENCE;
+
+    /* ── Helpers ── */
+    function fmt(secs) {
+      const m = Math.floor(secs / 60).toString().padStart(2, '0');
+      const s = (secs % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function updateRing() {
+      const progress = remainSecs / totalSecs;
+      const offset = CIRCUMFERENCE * (1 - progress);
+      ringProgress.style.strokeDashoffset = offset;
+    }
+
+    function setMode(newMode, silent = false) {
+      mode = newMode;
+      totalSecs = (mode === 'focus' ? focusMin : breakMin) * 60;
+      remainSecs = totalSecs;
+      timeDisplay.textContent = fmt(remainSecs);
+      modeLabel.textContent = mode === 'focus' ? 'Focus' : 'Short Break';
+      document.body.classList.toggle('break-mode', mode === 'break');
+      updateRing();
+
+      tabs.forEach(t => {
+        const active = t.dataset.mode === mode;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-selected', String(active));
+      });
+
+      if (!silent) renderCycleDots();
+    }
+
+    function renderCycleDots() {
+      cycleDots.innerHTML = '';
+      const max = 4;
+      for (let i = 0; i < max; i++) {
+        const d = document.createElement('div');
+        d.className = 'dot' + (i < (cycleCount % max) ? ' done' : '');
+        cycleDots.appendChild(d);
+      }
+    }
+
+    /* ── Audio (simple tone via Web Audio) ── */
+    function playTone(freq = 660, type = 'sine', duration = 0.35) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) { /* silently fail if audio blocked */ }
+    }
+
+    function playEndChime() {
+      playTone(660, 'sine', 0.4);
+      setTimeout(() => playTone(880, 'sine', 0.35), 180);
+      setTimeout(() => playTone(1100, 'sine', 0.5), 360);
+    }
+
+    /* ── Timer core ── */
+    function tick() {
+      remainSecs--;
+      timeDisplay.textContent = fmt(remainSecs);
+      updateRing();
+
+      if (remainSecs <= 0) {
+        clearInterval(intervalId);
+        running = false;
+        startBtn.textContent = 'Start';
+        startBtn.setAttribute('aria-label', 'Start timer');
+        playEndChime();
+
+        if (mode === 'focus') {
+          cycleCount++;
+          addHistoryEntry(focusMin * 60, 'focus');
+          showToast('Focus done — take a break!');
+          setTimeout(() => { setMode('break'); autoStart(); }, 800);
+        } else {
+          showToast('Break over — back to focus!');
+          setTimeout(() => { setMode('focus'); autoStart(); }, 800);
+        }
+      }
+    }
+
+    function autoStart() {
+      intervalId = setInterval(tick, 1000);
+      running = true;
+      startBtn.textContent = 'Pause';
+      startBtn.setAttribute('aria-label', 'Pause timer');
+    }
+
+    /* ── Controls ── */
+    startBtn.addEventListener('click', () => {
+      if (!running) {
+        if (remainSecs === 0) setMode(mode, true);
+        intervalId = setInterval(tick, 1000);
+        running = true;
+        startBtn.textContent = 'Pause';
+        startBtn.setAttribute('aria-label', 'Pause timer');
+      } else {
+        clearInterval(intervalId);
+        running = false;
+        startBtn.textContent = 'Resume';
+        startBtn.setAttribute('aria-label', 'Resume timer');
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      clearInterval(intervalId);
+      running = false;
+      startBtn.textContent = 'Start';
+      startBtn.setAttribute('aria-label', 'Start timer');
+      setMode(mode, true);
+    });
+
+    skipBtn.addEventListener('click', () => {
+      clearInterval(intervalId);
+      running = false;
+      startBtn.textContent = 'Start';
+      startBtn.setAttribute('aria-label', 'Start timer');
+      const next = mode === 'focus' ? 'break' : 'focus';
+      setMode(next);
+    });
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        clearInterval(intervalId);
+        running = false;
+        startBtn.textContent = 'Start';
+        startBtn.setAttribute('aria-label', 'Start timer');
+        setMode(tab.dataset.mode);
+      });
+      tab.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tab.click(); }
+      });
+    });
+
+    /* ── Settings ── */
+    settingsToggle.addEventListener('click', () => {
+      const open = settingsPanel.classList.toggle('open');
+      settingsToggle.setAttribute('aria-expanded', String(open));
+    });
+
+    applyBtn.addEventListener('click', () => {
+      const f = parseInt(focusInput.value, 10);
+      const b = parseInt(breakInput.value, 10);
+      if (isNaN(f) || f < 1 || isNaN(b) || b < 1) return;
+      focusMin = Math.min(f, 120);
+      breakMin = Math.min(b, 60);
+      clearInterval(intervalId);
+      running = false;
+      startBtn.textContent = 'Start';
+      startBtn.setAttribute('aria-label', 'Start timer');
+      setMode('focus');
+      settingsPanel.classList.remove('open');
+      settingsToggle.setAttribute('aria-expanded', 'false');
+      showToast('Settings applied');
+    });
+
+    /* ── History persistence ── */
+    function todayKey() { return new Date().toDateString(); }
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return [];
+        const data = JSON.parse(raw);
+        if (data.date !== todayKey()) { localStorage.removeItem(STORAGE_KEY); return []; }
+        return data.entries || [];
+      } catch (e) { return []; }
+    }
+
+    function saveHistory(entries) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ date: todayKey(), entries }));
+      } catch (e) { /* storage may be unavailable */ }
+    }
+
+    function renderHistory() {
+      const entries = loadHistory();
+      const focusCount = entries.filter(e => e.type === 'focus').length;
+      historyCount.textContent = `${focusCount} focus`;
+      cycleCount = focusCount;
+      renderCycleDots();
+
+      if (entries.length === 0) {
+        historyList.innerHTML = '<li class="history-empty">No sessions yet — start your first focus block.</li>';
+        return;
+      }
+
+      historyList.innerHTML = '';
+      entries.slice().reverse().forEach(entry => {
+        const li = document.createElement('li');
+        li.className = 'history-item';
+        li.setAttribute('role', 'listitem');
+        li.innerHTML = `
+          <div class="history-check" aria-hidden="true">✓</div>
+          <span class="history-duration">${fmt(entry.duration)}</span>
+          <span class="history-type">${entry.type === 'focus' ? 'focus session' : 'short break'}</span>
+          <span class="history-time">${entry.time}</span>
+        `;
+        historyList.appendChild(li);
+      });
+    }
+
+    function addHistoryEntry(duration, type) {
+      const entries = loadHistory();
+      const now = new Date();
+      const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      entries.push({ duration, type, time });
+      saveHistory(entries);
+      renderHistory();
+    }
+
+    /* ── Toast ── */
+    let toastTimer;
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
+    }
+
+    /* ── Init ── */
+    setMode('focus');
+    renderHistory();
+  </script>
+</body>
+</html>
